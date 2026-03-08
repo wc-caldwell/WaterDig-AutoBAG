@@ -9,6 +9,7 @@ version = "0.1.0"
 
 [dependencies]
 ipykernel = ">=7.2.0,<8"
+pip = ">=26.0.1,<27"
 
 [feature.process.dependencies]
 numpy = ">=2.4.2,<3"
