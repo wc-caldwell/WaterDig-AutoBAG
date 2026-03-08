@@ -2,12 +2,6 @@ import os
 from pygeohydro import EHydro
 from concurrent.futures import ThreadPoolExecutor
 from zipfile import ZipFile, BadZipFile
-import numpy as np
-import verde as vd
-import geopandas as gpd
-import fiona
-from scipy.spatial import cKDTree
-
 
 def extract_single_zip(zipf):
     """Extract a single zip file and remove it after extraction"""
