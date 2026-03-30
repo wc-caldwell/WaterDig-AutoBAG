@@ -1,0 +1,34 @@
+REPORT OF CHANNEL CONDITIONS 400 FEET WIDE OR GREATER                                                     02-02-2026
+
+To: Navigation Interests                                                   From: US Army Corps of Engineers, New York District
+                                                                                 New York, NY 10278
+                                                                                 Jersey City, NJ 07305
+-------------------------------------------------------------------------------------------------------------------------
+RIVER/HARBOR NAME AND STATE                                                                 MINIMUM DEPTHS IN EACH
+NY & NJ CHANNELS                                                                            1/4 WIDTH OF CHANNEL
+NEW JERSEY                                                                                  ENTERING FROM SEAWARD
+-------------------------------------------------------------------------------------------------------------------------
+                                                                                        LEFT     LEFT    RIGHT     RIGHT
+                                                                AUTHORIZED PROJECT     OUTSIDE  INSIDE   INSIDE   OUTSIDE
+NAME OF CHANNEL                                     DATE OF    WIDTH  LENGTH  DEPTH    QUARTER  QUARTER  QUARTER  QUARTER
+                                                    SURVEY     (feet) (miles) (feet)   (feet)   (feet)   (feet)   (feet)
+-------------------------------------------------------------------------------------------------------------------------
+NY & NJ CHANNELS - Arthur Kill North                             550
+REACH D                                             01-08-2026  1200     1.1   50.0  37.2/100 46.9/100 47.9/100 45.9/100
+Reach ID  NJ_05_AKN_1
+NY & NJ CHANNELS - Arthur Kill North                             500
+REACH F                                             01-08-2026   700     0.9   50.0  43.1/100 49.8/100 47.9/100 41.5/100
+Reach ID  NJ_05_AKN_2
+NY & NJ CHANNELS - Arthur Kill North                             500
+REACH G                                             01-08-2026   600     0.7   40.0  28.3/100 40.8/100 42.5/100 39.9/100
+Reach ID  NJ_05_AKN_3
+-------------------------------------------------------------------------------------------------------------------------
+NOTES
+REPORT GENERATED USING MAPPING DATASET
+SURVEY NAME NJ_05_AKN_20260108_CS_5638_30
+
+
+
+
+-------------------------------------------------------------------------------------------------------------------------
+

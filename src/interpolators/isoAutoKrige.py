@@ -22,7 +22,7 @@ import gc
 import multiprocessing
 from joblib import Parallel, delayed
 
-class isoAutoKrige_AIC:
+class isoAutoKrige:
     """Generate Kriging bathymetric surfaces with AIC-based model selection."""
     
     __slots__ = [
