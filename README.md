@@ -11,7 +11,7 @@
 
 - **Challenge Statement:** Hydrographic surveys vary widely in equipment type (single-beam vs. multi-beam echosounders), point density, spatial anisotropy, and depth variability across the USACE navigation portfolio. No national-scale comparative study has evaluated multiple automated interpolation methods across these diverse survey conditions.
 
-- **Solution Statement:** This study automates and compares six bathymetric interpolation methods — TIN, Natural Neighbor (NN), Inverse Distance Weighting (IDW), Radial Basis Functions (RBF), Ordinary Kriging (OK), and Regression Kriging (RK) — across hundreds of hydrographic surveys from five geographically diverse USACE civil works districts, leveraging automated variogram fitting and cross-validation to eliminate manual parameter tuning.
+- **Solution Statement:** This study automates and compares four bathymetric interpolation methods — TIN, Natural Neighbor (NN), Ordinary Kriging (OK), and Regression Kriging (RK) — across hundreds of hydrographic surveys from five geographically diverse USACE civil works districts, leveraging automated variogram fitting and cross-validation to eliminate manual parameter tuning.
 
 - **Objective:** To quantify which interpolation method produces the most accurate bathymetric surfaces under varying survey characteristics (anisotropy, depth variability, and point density), and to develop a decision framework to guide USACE practitioners in selecting the most appropriate interpolation method.
 
@@ -53,8 +53,6 @@ Six interpolation methods are implemented and compared:
 
 - **TIN (Triangulated Irregular Network):** The current default USACE method. Employs Delaunay triangulation with linear interpolation within triangles. Implemented using SciPy.
 - **NN (Natural Neighbor):** Builds on TIN by employing area-weighted interpolation via Voronoi tessellation to reduce artifacts at triangle boundaries. Implemented using SciPy.
-- **IDW (Inverse Distance Weighting):** Weights influence of neighboring observations using squared euclidean distance. Implemented using Verde.
-- **RBF (Radial Basis Function):** Builds on IDW by implementing a weighting function to define the influence of nearby observations using radial distances. This is applied to each observation and summed to create a single surface. RMSE-based cross-validation is used to determine optimal kernel function and parameters between thin plate splines, cubic polynomial, and quintic polynomials. Implemented using SciPy.
 - **OK (Ordinary Kriging):** Models spatial correlation by fitting an empirical variogram to depth data using weighted least squares via GSTools. The optimal variogram shape function (from 9 candidates) is selected by minimizing the Akaike Information Criterion (AIC). Kriging is then executed using PyKrige.
 - **RK (Regression Kriging):** Addresses potential nonstationarity by fitting a spline trend surface to depth data using Verde, then applying OK on the spline residuals via PyKrige. Final predictions combine the spline trend and kriged residuals.
 
