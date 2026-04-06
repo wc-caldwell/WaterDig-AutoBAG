@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 import numpy as np
 from pathlib import Path
-import verde as vd
 import geopandas as gpd
 import matplotlib.pyplot as plt
 from scipy.interpolate import LinearNDInterpolator
@@ -10,8 +9,6 @@ import rasterio
 from rasterio.transform import from_origin
 from rasterio.features import geometry_mask
 import json
-from rasterio.mask import mask
-from shapely.geometry import box
 import gc
 import multiprocessing
 from joblib import Parallel, delayed
