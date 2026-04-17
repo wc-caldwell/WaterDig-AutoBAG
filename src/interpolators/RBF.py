@@ -322,6 +322,8 @@ class RBF:
         else:
             output_path = Path(output_path)
 
+        self.output_path = output_path
+        
         with rasterio.open(self.output_path, "w", **self.meta) as dst:
             dst.write(self.grid_z, 1)  # Already float32
             dst.build_overviews([2, 4, 8, 16, 32], rasterio.enums.Resampling.average)
@@ -383,7 +385,7 @@ class RBF:
             float(self.y_grid.min()),
             float(self.y_grid.max()),
         ]
-        im = ax.imshow(self.grid_z, origin="upper", extent=extent, cmap="viridis")
+        im = ax.imshow(self.grid_z, origin="upper", extent=extent, cmap="terrain")
         plt.colorbar(im, ax=ax, label="Depth")
         ax.set(xlabel="Easting", ylabel="Northing", title="RBF Interpolation")
         ax.grid(color="white", linestyle="--", linewidth=0.5, alpha=0.3)

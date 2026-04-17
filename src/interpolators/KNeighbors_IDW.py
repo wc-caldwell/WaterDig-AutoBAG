@@ -204,13 +204,14 @@ class IDW:
         """Write COG raster."""
         if output_path is None:
             output_path = (
-                self.tgt_survey.parent
-                / f"IDW_{self.reduction_method}_{self.tgt_num_pts}.tif"
+                self.tgt_survey.parent / f"IDW_{self.reduction_method}_{self.tgt_num_pts}.tif"
             )
         else:
             output_path = Path(output_path)
 
-        with rasterio.open(self.output_path, "w", **self.meta) as dst:
+        self.output_path = output_path
+
+        with rasterio.open(output_path, "w", **self.meta) as dst:
             dst.write(self.grid_z, 1)
             dst.build_overviews([2, 4, 8, 16, 32], rasterio.enums.Resampling.average)
 

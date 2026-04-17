@@ -182,7 +182,7 @@ class NaturalNeighbor:
         fig, ax = plt.subplots(figsize=(10, 8), dpi=150)
         extent = [float(self.x_grid.min()), float(self.x_grid.max()), 
                   float(self.y_grid.min()), float(self.y_grid.max())]
-        im = ax.imshow(self.grid_z, origin="upper", extent=extent, cmap='viridis')
+        im = ax.imshow(self.grid_z, origin="upper", extent=extent, cmap='terrain')
         plt.colorbar(im, ax=ax, label='Depth')
         ax.set(xlabel='Easting', ylabel='Northing', title='Natural Neighbor Interpolation')
         ax.grid(color='white', linestyle='--', linewidth=0.5, alpha=0.3)

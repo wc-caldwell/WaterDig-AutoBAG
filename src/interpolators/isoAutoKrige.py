@@ -497,7 +497,7 @@ class isoAutoKrige:
         fig, ax = plt.subplots(figsize=(10, 8), dpi=150)
         extent = [float(self.x_grid.min()), float(self.x_grid.max()), 
                   float(self.y_grid.min()), float(self.y_grid.max())]
-        im = ax.imshow(self.krige_pred, origin="lower", extent=extent, cmap='viridis')
+        im = ax.imshow(self.krige_pred, origin="lower", extent=extent, cmap='terrain')
         plt.colorbar(im, ax=ax, label='Depth')
         ax.set(xlabel='Easting', ylabel='Northing', 
                title=f'Kriging Interpolation (AIC Selection)\nModel: {self.ranking[0][0]} (AIC={self.fit_aic:.2f})')
