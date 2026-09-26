@@ -11,10 +11,11 @@ WORKDIR /app
 
 COPY pixi.toml pixi.lock ./
 
-RUN pixi install --locked -e process \
+RUN pixi lock \
+    && pixi install -a \
     && pixi clean cache --yes
 
 COPY . .
 
-ENTRYPOINT ["pixi", "run", "-e", "process", "--"]
+ENTRYPOINT ["pixi", "run", "--"]
 CMD ["python", "--version"]

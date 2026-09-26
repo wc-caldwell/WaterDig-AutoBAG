@@ -33,7 +33,7 @@ class isoAutoKrige:
         'y_grid', 'krige_pred', 'krige_var', 'transform', 'cv_metadata',
         'depth_tif_path', 'uncertainty_tif_path', 'meta', 'n_jobs', 'spline_damping',
         '_crs', '_fold_spacing', '_ill_conditioned', '_ill_conditioned_count', '_total_chunks',
-        '_empirical_bins', '_empirical_gamma', '_vario_estimator'
+        '_empirical_bins', '_empirical_gamma', '_vario_estimator', "vario_weights"
     ]
     
     def __init__(self, tgt_survey, vario_models, reduction_method, x, y, z,
@@ -91,59 +91,48 @@ class isoAutoKrige:
         self.residuals = self.bathymetry - self.trendSurface.predict(self.coordinates)
 
     def _calculate_aic(self, model, bin_center, gamma):
-        """
-        Calculate AIC for a fitted variogram model.
-        
-        Parameters
-        ----------
-        model : gstools.CovModel
-            Fitted variogram model
-        bin_center : array
-            Bin centers from empirical variogram
-        gamma : array
-            Empirical variogram values
-        
-        Returns
-        -------
-        float
-            AIC score (lower is better)
-        """
-        # Get predicted values from the fitted model
-        gamma_pred = model.variogram(bin_center)
-        
-        # Calculate residuals
-        residuals = gamma - gamma_pred
-        
-        # Calculate RSS (Residual Sum of Squares)
-        rss = np.sum(residuals**2)
-        
-        # Number of data points
-        n = len(bin_center)
-        
-        # Number of parameters in the model
-        # Most gstools models have 3 parameters: var (variance), len_scale (range), nugget
-        # Some models may have additional parameters
-        k = 3  # Default: variance, length scale, nugget
-        
-        # Handle models with additional parameters
-        model_name = model.__class__.__name__.lower()
-        if 'stable' in model_name:
-            k = 4  # Includes shape parameter (alpha)
-        elif 'matern' in model_name:
-            k = 4  # Includes smoothness parameter (nu)
-        
-        # Calculate AIC using the formula: AIC = n * ln(RSS/n) + 2*k
-        # Add small epsilon to avoid log(0)
-        if rss < 1e-10:
-            rss = 1e-10
-        
-        aic = n * np.log(rss / n) + 2 * k
-        
-        # Apply small sample correction (AICc) if n/k < 40
-        if n / k < 40:
-            aic = aic + (2 * k * (k + 1)) / (n - k - 1)
-        
-        return aic
+            """
+            Calculate AIC for a fitted variogram model.
+            
+            Parameters
+            ----------
+            model : gstools.CovModel
+                Fitted variogram model
+            bin_center : array
+                Bin centers from empirical variogram
+            gamma : array
+                Empirical variogram values
+            
+            Returns
+            -------
+            float
+                AIC score (lower is better)
+            """
+            # Get predicted values from the fitted model
+            gamma_pred = model.variogram(bin_center)
+            
+            # Calculate residuals
+            residuals = gamma - gamma_pred
+            
+            # Number of data points
+            n = len(bin_center)
+    
+            wrss = np.sum(self.vario_weights * residuals**2)
+            if wrss < 1e-10:
+                wrss = 1e-10
+    
+            k = 3
+            model_name = model.__class__.__name__.lower()
+            if 'stable' in model_name:
+                k = 4
+            elif 'matern' in model_name:
+                k = 4
+    
+            aic = n * np.log(wrss / n) + 2 * k
+            if n / k < 40:
+                aic = aic + (2 * k * (k + 1)) / (n - k - 1)
+    
+            return aic
 
     def _fit_variograms(self, max_evals=500000):
         """Fit variogram models and select best based on AIC."""
@@ -153,14 +142,16 @@ class isoAutoKrige:
         )
         
         data = self.residuals if self.detrend else self.bathymetry
-        bin_center, gamma = gs.vario_estimate(
-            self.coordinates, data, bins, estimator=self._vario_estimator, latlon=False     # cressie or matheron
+        bin_center, gamma, counts = gs.vario_estimate(
+            self.coordinates, data, bins, estimator=self._vario_estimator, latlon=False,     # cressie or matheron
+            return_counts = True
         )
+
+        self.vario_weights = counts / (bin_center**2 + 1e-6)
         
         # Store for plotting
         self._empirical_bins = bin_center
         self._empirical_gamma = gamma
-        
         vario_scores = {}
         best_aic, best_model = np.inf, None
         
@@ -169,7 +160,7 @@ class isoAutoKrige:
             
             try:
                 # Fit the model (we don't need R² anymore)
-                model.fit_variogram(bin_center, gamma, max_eval=max_evals)
+                model.fit_variogram(bin_center, gamma, max_eval=max_evals, weights=self.vario_weights)
                 
                 # Calculate AIC for this model
                 aic = self._calculate_aic(model, bin_center, gamma)
@@ -236,9 +227,25 @@ class isoAutoKrige:
         x_ext_end = x_ext_start + min(chunk_size, nx - ix)
 
         # Extract the core (non-overlapping) region
-        z_core = np.array(z[y_ext_start:y_ext_end, x_ext_start:x_ext_end])
-        ss_core = np.array(ss[y_ext_start:y_ext_end, x_ext_start:x_ext_end])
-        
+        # Use np.ma.filled to convert any masked entries to NaN explicitly,
+        # rather than relying on a 0-sentinel downstream.
+        z_slice = z[y_ext_start:y_ext_end, x_ext_start:x_ext_end]
+        ss_slice = ss[y_ext_start:y_ext_end, x_ext_start:x_ext_end]
+        if np.ma.is_masked(z_slice):
+            z_core = np.ma.filled(z_slice, np.nan).astype(np.float32)
+        else:
+            z_core = np.asarray(z_slice, dtype=np.float32)
+        if np.ma.is_masked(ss_slice):
+            ss_core = np.ma.filled(ss_slice, np.nan).astype(np.float32)
+        else:
+            ss_core = np.asarray(ss_slice, dtype=np.float32)
+
+        # Also return the core region of the polygon mask so the aggregator
+        # only writes inside-polygon cells (prevents bleed-out artifacts).
+        core_mask = np.asarray(
+            chunk_mask[y_ext_start:y_ext_end, x_ext_start:x_ext_end]
+        )
+
         return {
             'iy': iy,
             'ix': ix,
@@ -246,6 +253,7 @@ class isoAutoKrige:
             'x_size': x_ext_end - x_ext_start,
             'z': z_core,
             'ss': ss_core,
+            'core_mask': core_mask,
             'ill_conditioned': ill_conditioned
         }
 
@@ -258,7 +266,7 @@ class isoAutoKrige:
             variogram_model=self.fit_model,
             coordinates_type = 'euclidean'
         )
-        overlap = int(np.ceil(2.0 * self.krige_model.len_scale / self.grid_res))
+        overlap = int(np.ceil(2.0 * self.fit_model.len_scale / self.grid_res))
         # Pre-compute bounds
         x_min, x_max = float(self.coordinates[0].min()), float(self.coordinates[0].max())
         y_min, y_max = float(self.coordinates[1].min()), float(self.coordinates[1].max())
@@ -321,21 +329,37 @@ class isoAutoKrige:
             ix = result['ix']
             y_size = result['y_size']
             x_size = result['x_size']
-            
-            z_final[iy:iy + y_size, ix:ix + x_size] = result['z']
-            ss_final[iy:iy + y_size, ix:ix + x_size] = result['ss']
+            core_mask = result['core_mask']
+
+            # Only write predictions into cells inside the survey polygon.
+            # Cells outside the polygon remain NaN (their initialized value),
+            # which prevents the kriging surface from bleeding past the AOI.
+            z_target = z_final[iy:iy + y_size, ix:ix + x_size]
+            ss_target = ss_final[iy:iy + y_size, ix:ix + x_size]
+            np.copyto(z_target, result['z'], where=core_mask)
+            np.copyto(ss_target, result['ss'], where=core_mask)
+            z_final[iy:iy + y_size, ix:ix + x_size] = z_target
+            ss_final[iy:iy + y_size, ix:ix + x_size] = ss_target
 
         # Set flags for ill-conditioning 
         self._ill_conditioned = ill_conditioned_chunks > 0
         self._ill_conditioned_count = ill_conditioned_chunks
         self._total_chunks = total_chunks
 
+        # Belt-and-suspenders: force NaN anywhere outside the polygon, in
+        # case a chunk's local mask differed from the global mask at all.
+        z_final[~full_mask] = np.nan
+        ss_final[~full_mask] = np.nan
+
         if self.detrend:
             del trend_full
         del full_mask
 
-        self.krige_pred = np.where(z_final == 0, np.nan, z_final)
-        self.krige_var = np.where(ss_final == 0, np.nan, ss_final)
+        # Assign directly. Do NOT use `np.where(z_final == 0, np.nan, ...)`:
+        # legitimate predictions of exactly 0 (common with detrended residuals)
+        # would be wrongly nulled.
+        self.krige_pred = z_final
+        self.krige_var = ss_final
 
     def _krige(self):
         data = self.residuals if self.detrend else self.bathymetry
@@ -371,21 +395,39 @@ class isoAutoKrige:
         xx_full, yy_full = np.meshgrid(self.x_grid, self.y_grid)
         full_mask = contains(polygon, xx_full, yy_full)
 
-        z_pred, ss_final = self.krige_model.execute(
+        z_pred, ss_pred = self.krige_model.execute(
             style="masked", xpoints=self.x_grid, ypoints=self.y_grid,
             mask=~full_mask, backend="vectorized"
         )
 
+        # PyKrige returns numpy.ma.MaskedArray under style="masked".
+        # Convert masked entries to NaN explicitly so downstream math and
+        # raster writes don't fall back to fill_value or 0.
+        if np.ma.is_masked(z_pred):
+            z_pred = np.ma.filled(z_pred, np.nan).astype(np.float32)
+        else:
+            z_pred = np.asarray(z_pred, dtype=np.float32)
+        if np.ma.is_masked(ss_pred):
+            ss_pred = np.ma.filled(ss_pred, np.nan).astype(np.float32)
+        else:
+            ss_pred = np.asarray(ss_pred, dtype=np.float32)
+
         if self.detrend:
             trend_full = self.trendSurface.predict((xx_full, yy_full)).astype(np.float32)
-
-        if self.detrend and trend_full is not None:
             z_final = z_pred + trend_full
         else:
             z_final = z_pred
+        ss_final = ss_pred
 
-        self.krige_pred = np.where(z_final == 0, np.nan, z_final)
-        self.krige_var = np.where(ss_final == 0, np.nan, ss_final)
+        # Belt-and-suspenders: enforce the polygon mask on the final grid.
+        # Do NOT use `np.where(z_final == 0, np.nan, ...)`: legitimate
+        # predictions of exactly 0 (common with detrended residuals) would
+        # be wrongly nulled.
+        z_final[~full_mask] = np.nan
+        ss_final[~full_mask] = np.nan
+
+        self.krige_pred = z_final
+        self.krige_var = ss_final
 
     def _write_output(self, pred_out_path=None, var_out_path=None, nodata_value=-9999.0):
         """Write COG rasters with AIC metadata."""

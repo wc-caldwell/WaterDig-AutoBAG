@@ -1,4 +1,9 @@
 import os
+from types import SimpleNamespace
+import requests
+from urllib.parse import unquote, urlparse
+from pygeoogc import ArcGISRESTful
+import pygeoutils as geoutils
 from pygeohydro import EHydro
 from concurrent.futures import ThreadPoolExecutor
 from zipfile import ZipFile, BadZipFile
@@ -10,7 +15,30 @@ import fiona
 from scipy.spatial import cKDTree
 import matplotlib.pyplot as plt
 from sklearn.neighbors import NearestNeighbors
+from pathlib import Path
+import rasterio
+from rasterio.mask import mask
+import numpy as np
+import pandas as pd
 
+def download_single_zip(url, data_dir):
+    """Download one survey zip into data_dir. Skips files already downloaded."""
+    fname = data_dir / unquote(Path(urlparse(url).path).name)
+    if fname.exists() and fname.stat().st_size > 0:
+        return fname, True
+    tmp = fname.with_name(fname.name + ".part")
+    try:
+        with requests.get(url, stream=True, timeout=300) as r:
+            r.raise_for_status()
+            with open(tmp, "wb") as f:
+                for chunk in r.iter_content(chunk_size=1 << 20):
+                    f.write(chunk)
+        tmp.rename(fname)
+        return fname, True
+    except Exception as ex:
+        tmp.unlink(missing_ok=True)
+        print(f"Failed: {url} ({ex})")
+        return fname, False
 
 def extract_single_zip(zipf):
     """Extract a single zip file and remove it after extraction"""
@@ -49,104 +77,44 @@ def retrieve_ehydro_data(data_dir:Path, start_date:str, end_date:str, district_s
         Number of parallel workers for zip extraction (default: 1)
     """
 
-    where_parts = []
-    id_only_parts = []
-
-    if start_date:
-        where_parts.append(f"surveydatestart >= '{start_date}'")
-    if end_date:
-        where_parts.append(f"surveydatestart <= '{end_date}'")
     if district_symbol:
-        where_parts.append(f"usacedistrictcode = '{district_symbol}'")
-        id_only_parts.append(f"usacedistrictcode = '{district_symbol}'")
         data_dir = data_dir / district_symbol
-
-    survey_candidates = [None]
-    if surveyID:
-        parts = surveyID.split("_")
-        # Right-to-left trimming: keep dropping trailing segments until a hit.
-        survey_candidates = ["_".join(parts[:i]) for i in range(len(parts), 0, -1)]
-
-    if channel_area:
-        where_parts.append(f"channelareaidfk = '{channel_area}'")
-        id_only_parts.append(f"channelareaidfk = '{channel_area}'")
-
-    where_clause = " AND ".join(where_parts)
-    id_only_clause = " AND ".join(id_only_parts) if id_only_parts else None
-
-    def _query_with_optional_survey(base_parts, candidates, query_label):
-        last_error = None
-        attempted_queries = set()
-
-        for candidate in candidates:
-            survey_filters = [None]
-            if candidate:
-                # Try exact first, then prefix match for variable suffix tokens.
-                safe_candidate = candidate.replace("'", "''")
-                survey_filters = [
-                    f"surveyjobidpk = '{safe_candidate}'",
-                    f"surveyjobidpk LIKE '{safe_candidate}%'",
-                ]
-
-            for survey_filter in survey_filters:
-                query_parts = list(base_parts)
-                if survey_filter:
-                    query_parts.append(survey_filter)
-                query = " AND ".join(query_parts)
-
-                if query in attempted_queries:
-                    continue
-                attempted_queries.add(query)
-
-                print(f"{query_label}: {query}")
-                try:
-                    result = ehydro.bysql(query)
-                    if candidate and candidate != surveyID:
-                        print(f"Matched with trimmed SURVEY_ID: {candidate}")
-                    if survey_filter and " LIKE " in survey_filter:
-                        print("Matched via LIKE-prefix fallback on surveyjobidpk.")
-                    return result
-                except ZeroMatchedError as ex:
-                    last_error = ex
-                    continue
-
-        if last_error is not None:
-            raise last_error
-
-        return ehydro.bysql(" AND ".join(base_parts))
     
     data_dir.mkdir(parents=True, exist_ok=True)
     
-    ehydro = EHydro(data_type="outlines", cache_dir=data_dir)
+    client = ArcGISRESTful(
+        "https://services7.arcgis.com/n1YM8pTrFmm7L4hs/arcgis/rest/services/eHydro_Survey_Data/FeatureServer",
+        0, outformat="json", crs=4326,
+    )
+    def _bysql(query):
+        oids = client.oids_bysql(query)
+        if not oids:
+            raise ZeroMatchedError()
+        return geoutils.json2geodf(client.get_features(oids), 4326, 4326)
+    ehydro = SimpleNamespace(bysql=_bysql)
 
     date_base_parts = [
-        f"surveydatestart >= '{start_date}'",
-        f"surveydatestart <= '{end_date}'",
+        f"surveydatestart >= DATE '{start_date}'",
+        f"surveydatestart <= DATE '{end_date}'",
     ]
     if district_symbol:
         date_base_parts.append(f"usacedistrictcode = '{district_symbol}'")
     if channel_area:
         date_base_parts.append(f"channelareaidfk = '{channel_area}'")
+    if surveyID:
+        date_base_parts.append(f"surveyjobidpk LIKE '{surveyID}%'")
 
-    id_base_parts = []
-    if district_symbol:
-        id_base_parts.append(f"usacedistrictcode = '{district_symbol}'")
-    if channel_area:
-        id_base_parts.append(f"channelareaidfk = '{channel_area}'")
-
-    try:
-        topobathy = _query_with_optional_survey(date_base_parts, survey_candidates, "Primary eHydro query")
-    except ZeroMatchedError:
-        # Date can be offset from the SURVEY_ID token date. Retry without date.
-        if surveyID:
-            print("No matches for date-constrained queries; retrying without date filters.")
-            topobathy = _query_with_optional_survey(id_base_parts, survey_candidates, "Fallback eHydro query")
-        else:
-            raise
+    query = " AND ".join(date_base_parts)
+    topobathy = ehydro.bysql(query)
 
     topobathy.to_parquet(data_dir / 'ehydro.parquet')
     print(f'eHydro survey data saved locally to {data_dir}')
     print(f'Survey metadata saved to {data_dir / "ehydro.parquet"}')
+
+    urls = topobathy['sourcedatalocation'].dropna().unique().tolist()
+    print(f'Downloading {len(urls)} survey files...')
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        list(executor.map(lambda u: download_single_zip(u, data_dir), urls))
 
     # Parallel zip extraction for speed
     zip_files = list(data_dir.glob('*.ZIP')) + list(data_dir.glob('*.zip'))
@@ -158,6 +126,7 @@ def retrieve_ehydro_data(data_dir:Path, start_date:str, end_date:str, district_s
         print(f'Successfully extracted {extracted}/{len(zip_files)} files')
 
     return topobathy
+    # return geoutils.json2geodf(client.get_features(oids), 4326, 4326)
 
 def calculate_survey_characteristics(x, y, z):
     """
@@ -312,7 +281,8 @@ def decimate_survey_points(survey, tgt_num_pts, reduction_method='median',
     return x, y, z, x_raw, y_raw, z_raw
 
 def validate_bathymetric_surface(surface_tif, x_raw, y_raw, z_raw, 
-                                 output_csv=None, method_name=None):
+                                 output_csv=None, method_name=None,
+                                 moran_sample=None, plot_sample=None):
     """
     Universal validation function - works with any bathymetric surface.
     
@@ -336,9 +306,6 @@ def validate_bathymetric_surface(surface_tif, x_raw, y_raw, z_raw,
     dict
         Summary statistics
     """
-    import pandas as pd
-    import rasterio
-    from pathlib import Path
     
     surface_tif = Path(surface_tif)
     
@@ -441,20 +408,25 @@ def validate_bathymetric_surface(surface_tif, x_raw, y_raw, z_raw,
     valid_true = z_filtered[valid_mask]
     
     rmse = np.sqrt(np.mean(valid_resids**2))
+    nmad = 1.4826 * np.median(abs(valid_resids - np.median(valid_resids)))
     mae = np.mean(np.abs(valid_resids))
     bias = np.mean(valid_resids)
     std_dev = np.std(valid_resids)
     
-    # Bootstrap CI for RMSE
+    # Bootstrap CI for RMSE and NMAD
     n_bootstrap = 1000
     subsample_size = min(10000, n_valid)
     rmse_samples = []
+    nmad_samples = []
     for _ in range(n_bootstrap):
         sample = np.random.choice(valid_resids, size=subsample_size, replace=True)
         rmse_samples.append(np.sqrt(np.mean(sample**2)))
+        nmad_samples.append(1.4826 * np.median(abs(sample - np.median(sample))))
     rmse_ci = np.percentile(rmse_samples, [2.5, 97.5])
     rmse_se = np.std(rmse_samples)
-    
+    nmad_ci = np.percentile(nmad_samples, [2.5, 97.5])
+    nmad_se = np.std(nmad_samples)
+
     # Percentiles
     percentiles = {
         '5th': float(np.percentile(valid_resids, 5)),
@@ -471,6 +443,8 @@ def validate_bathymetric_surface(surface_tif, x_raw, y_raw, z_raw,
     print(f"\nError Metrics:")
     print(f"  RMSE:               {rmse:.3f} ± {rmse_se:.3f} ft")
     print(f"  RMSE 95% CI:        [{rmse_ci[0]:.3f}, {rmse_ci[1]:.3f}] ft")
+    print(f"  NMAD:               {nmad:.3f} ± {nmad_se:.3f} ft")
+    print(f"  NMAD 95% CI:        [{nmad_ci[0]:.3f}, {nmad_ci[1]:.3f}] ft")
     print(f"  MAE:                {mae:.3f} ft")
     print(f"  Bias:               {bias:.3f} ft")
     print(f"  Std Dev:            {std_dev:.3f} ft")
@@ -521,5 +495,200 @@ def validate_bathymetric_surface(surface_tif, x_raw, y_raw, z_raw,
     df.to_csv(output_csv, index=False)
     print(f"\nValidation results saved to: {output_csv}")
     print(f"{'='*60}\n")
+
+    run_line_diagnostics(
+        z_pred = np.array(df.Predicted_Depth),
+        z_true = np.array(df.True_Depth),
+        xy_coords= df[['X', 'Y']].to_numpy(),
+        moran_sample=moran_sample,   # set None to use all points
+        plot_sample=plot_sample,    # set None to plot all points
+        )
     
     return df, stats
+
+def run_line_diagnostics(
+    z_pred,
+    z_true,
+    xy_coords,
+    k=8,
+    n_bins=10,
+    min_bin_n=10,
+    moran_sample=30000,   # set None to use all points
+    plot_sample=50000,    # set None to plot all points
+    make_plots=True,
+    random_state=42,
+):
+
+    valid = np.isfinite(z_pred) & np.isfinite(z_true) & np.isfinite(xy_coords).all(axis=1)
+    y_true = z_true[valid]
+    y_pred = z_pred[valid]
+    xy = xy_coords[valid]
+
+    resid = y_pred - y_true
+    fitted = y_pred
+    n = resid.size
+
+    if n < 3:
+        raise ValueError("Not enough valid samples for diagnostics.")
+
+    # optional subsample for speed (Moran + plots) 
+    rng = np.random.default_rng(random_state)
+    if moran_sample is not None and n > moran_sample:
+        idx_m = rng.choice(n, size=moran_sample, replace=False)
+    else:
+        idx_m = np.arange(n)
+
+    if plot_sample is not None and n > plot_sample:
+        idx_p = rng.choice(n, size=plot_sample, replace=False)
+    else:
+        idx_p = np.arange(n)
+
+    # metrics 
+    lin_corr = np.corrcoef(fitted, resid)[0, 1]
+
+    order = np.lexsort((xy[:, 1], xy[:, 0]))
+    r_sorted = resid[order]
+    dw = np.sum(np.diff(r_sorted) ** 2) / (np.sum(r_sorted ** 2) + 1e-12)
+
+    xy_m = xy[idx_m]
+    r_m = resid[idx_m]
+    k_eff = max(1, min(k, len(xy_m) - 1))
+    nbrs = NearestNeighbors(n_neighbors=k_eff + 1).fit(xy_m)
+    dist, idx = nbrs.kneighbors(xy_m)
+
+    w = 1.0 / (dist[:, 1:] + 1e-6)
+    zc = r_m - r_m.mean()
+    num = np.sum(w * zc[:, None] * zc[idx[:, 1:]])
+    den = np.sum(zc ** 2) + 1e-12
+    W = np.sum(w) + 1e-12
+    moran_I = (len(r_m) / W) * (num / den)
+
+    resid_mean = resid.mean()
+    resid_std = resid.std(ddof=1)
+    skew = np.mean(((resid - resid_mean) / (resid_std + 1e-12)) ** 3)
+    kurt_excess = np.mean(((resid - resid_mean) / (resid_std + 1e-12)) ** 4) - 3.0
+
+    abs_resid_corr = np.corrcoef(fitted, np.abs(resid))[0, 1]
+
+    q = np.quantile(fitted, np.linspace(0, 1, n_bins + 1))
+    bin_vars = []
+    for i in range(len(q) - 1):
+        m = (fitted >= q[i]) & (fitted < q[i + 1]) if i < len(q) - 2 else (fitted >= q[i]) & (fitted <= q[i + 1])
+        if m.sum() > min_bin_n:
+            bin_vars.append(np.var(resid[m], ddof=1))
+    var_ratio = (np.max(bin_vars) / (np.min(bin_vars) + 1e-12)) if len(bin_vars) > 1 else np.nan
+
+    metrics = {
+        "n_valid": int(n),
+        "linearity_corr_fitted_resid": float(lin_corr),
+        "durbin_watson_spatial_sorted": float(dw),
+        "moran_I": float(moran_I),
+        "resid_mean": float(resid_mean),
+        "resid_std": float(resid_std),
+        "resid_skew": float(skew),
+        "resid_excess_kurtosis": float(kurt_excess),
+        "corr_fitted_abs_resid": float(abs_resid_corr),
+        "resid_var_max_min_deciles": float(var_ratio),
+    }
+
+    print(f"Valid samples used: {metrics['n_valid']:,}")
+    print(f"[L] Corr(fitted, residual): {metrics['linearity_corr_fitted_resid']:.4f}")
+    print(f"[I] Durbin-Watson (spatially sorted): {metrics['durbin_watson_spatial_sorted']:.4f}")
+    print(f"[I] Moran's I (k={k_eff}, n={len(r_m):,}): {metrics['moran_I']:.4f}")
+    print(
+        f"[N] mean={metrics['resid_mean']:.4f}, std={metrics['resid_std']:.4f}, "
+        f"skew={metrics['resid_skew']:.4f}, excess kurtosis={metrics['resid_excess_kurtosis']:.4f}"
+    )
+    print(f"[E] Corr(fitted, |residual|): {metrics['corr_fitted_abs_resid']:.4f}")
+    if np.isfinite(metrics["resid_var_max_min_deciles"]):
+        print(f"[E] Residual variance max/min across fitted bins: {metrics['resid_var_max_min_deciles']:.3f}")
+
+    # plots 
+    if make_plots:
+        yt, yp, rp, xp = y_true[idx_p], y_pred[idx_p], resid[idx_p], xy[idx_p]
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10), dpi=120)
+
+        ax = axes[0, 0]
+        ax.scatter(yt, yp, s=3, alpha=0.25)
+        mn, mx = float(min(yt.min(), yp.min())), float(max(yt.max(), yp.max()))
+        ax.plot([mn, mx], [mn, mx], "r--", lw=1)
+        ax.set_title("Observed vs Predicted")
+        ax.set_xlabel("Observed depth (ft)")
+        ax.set_ylabel("Predicted depth (ft)")
+        ax.grid(alpha=0.3)
+
+        ax = axes[0, 1]
+        ax.scatter(yp, rp, s=3, alpha=0.25)
+        ax.axhline(0, color="red", linestyle="--", linewidth=1)
+        ax.set_title("Residuals vs Fitted (L, E)")
+        ax.set_xlabel("Fitted")
+        ax.set_ylabel("Residual (pred - obs)")
+        ax.grid(alpha=0.3)
+
+        ax = axes[1, 0]
+        ax.hist(rp, bins=60, color="steelblue", edgecolor="black", alpha=0.75)
+        ax.axvline(0, color="red", linestyle="--", linewidth=1)
+        ax.set_title("Residual Distribution (N)")
+        ax.set_xlabel("Residual")
+        ax.set_ylabel("Count")
+        ax.grid(alpha=0.3)
+
+        ax = axes[1, 1]
+        sc = ax.scatter(xp[:, 0], xp[:, 1], c=rp, s=2, cmap="coolwarm", alpha=0.8)
+        ax.set_title("Residuals in Space (I)")
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.grid(alpha=0.2)
+        fig.colorbar(sc, ax=ax, label="Residual")
+
+        plt.tight_layout()
+        plt.show()
+
+    return metrics
+
+def compute_volume(tif_path, polygon_gdf, auth_depth, unit="yd"):
+
+    with rasterio.open(tif_path) as src:
+        if polygon_gdf.crs != src.crs:
+            polygon_gdf = polygon_gdf.to_crs(src.crs)
+        out_image, out_transform = mask(src, polygon_gdf.geometry.values,
+                                        crop=True, filled=True, nodata=np.nan)
+        data = out_image[0].astype("float64")
+        if src.nodata is not None:
+            data[data == src.nodata] = np.nan
+
+    cut = auth_depth + data
+    cut = np.where(cut > 0, cut, 0.0)
+    cut[np.isnan(data)] = 0.0
+
+    px, py = abs(out_transform.a), abs(out_transform.e)
+    volume_ft3 = np.nansum(cut) * px * py
+    
+    # if statement returns posterior lower bound, prediction, and posterior upper bound dredge cut estimates
+    if "GP" in str(tif_path):
+        unc_tif_path = Path(str(tif_path).replace('bathy', 'uncertainty'))
+        with rasterio.open(unc_tif_path) as unc_src:
+            unc_out_image, _ = mask(unc_src, polygon_gdf.geometry.values,
+                                        crop=True, filled=True, nodata=np.nan)
+            unc_data = unc_out_image[0].astype("float64")
+            if unc_src.nodata is not None:
+                unc_data[unc_data == unc_src.nodata] = np.nan
+        
+        # upper bound depth+uncertainty
+        data_up = data + unc_data
+        cut_up = auth_depth - data_up
+        cut_up = np.where(cut_up > 0, cut_up, 0.0)
+        cut_up[np.isnan(data_up)] = 0.0
+        volume_ft3_up = np.nansum(cut_up) * px * py
+
+        # lower bound depth+uncertainty
+        data_low = data - unc_data
+        cut_low = auth_depth - data_low
+        cut_low = np.where(cut_low > 0, cut_low, 0.0)
+        cut_low[np.isnan(data_low)] = 0.0
+        volume_ft3_low = np.nansum(cut_low) * px * py
+
+        return (volume_ft3_up * 0.3048**3, volume_ft3* 0.3048**3, volume_ft3_low * 0.3048**3) if unit == "m" else ((volume_ft3_up / 27.0), (volume_ft3 / 27.0), (volume_ft3_low / 27.0))
+    
+    else:
+        return volume_ft3 * 0.3048**3 if unit == "m" else (volume_ft3 / 27.0)
