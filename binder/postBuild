@@ -1,0 +1,14 @@
+#!/bin/bash
+set -euo pipefail
+
+# Create the separate R environment
+mamba env create -p "${CONDA_DIR}/envs/r" -f binder/r-env.yml
+
+# Register the R kernel where the Jupyter in the main environment will find it
+"${CONDA_DIR}/envs/r/bin/R" --quiet -e \
+  "IRkernel::installspec(name = 'ir', displayname = 'R', prefix = '${NB_PYTHON_PREFIX}')"
+
+# CRAN-only packages (if any) go here, installed with the R environment's Rscript:
+# "${CONDA_DIR}/envs/r/bin/Rscript" -e 'install.packages("somepkg", repos = "https://cloud.r-project.org")'
+
+mamba clean -afy
