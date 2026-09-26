@@ -1,0 +1,25 @@
+name: py
+channels:
+- conda-forge
+- nodefaults
+dependencies:
+- ipykernel >=7.2.0,<8
+- pip >=26.0.1,<27
+- python 3.11.*
+- jupyterlab >=4.5.6,<5
+- bash_kernel >=0.7.2,<0.11
+- pixi-kernel >=0.7.1,<0.8
+- ipywidgets >=8.1.8,<9
+- matplotlib >=3.10.8,<4
+- numpy >=2.4.2,<3
+- scipy >=1.17.1,<2
+- gdal >=3.12.2,<4
+- pyproj >=3.7.2,<4
+- pandas >=3.0.1,<4
+- geopandas >=1.1.2,<2
+- fiona >=1.10.1,<2
+- verde >=1.8.1,<2
+- pygeohydro >=0.19.4,<0.20
+- gstools >=1.7.0,<2
+- pykrige >=1.7.3,<2
+

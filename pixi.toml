@@ -5,9 +5,14 @@ name = "WaterDig-AutoBAG"
 platforms = ["osx-arm64", "linux-64", "win-64"]
 version = "0.1.0"
 
+[tasks]
+py_export = "pixi workspace export conda-environment -e py > py_env.yml"
+r_export = "pixi workspace export conda-environment -e r > r_env.yml"
+
 [feature.pydev.dependencies]
 ipykernel = ">=7.2.0,<8"
 pip = ">=26.0.1,<27"
+python = "3.11.*"
 jupyterlab = ">=4.5.6,<5"
 bash_kernel = ">=0.7.2,<0.11"
 pixi-kernel = ">=0.7.1,<0.8"
