@@ -3,13 +3,19 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build:
     name: Build Notebook Container
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@main
+        uses: actions/checkout@v4
+
       - name: Build with repo2docker
         uses: jupyterhub/repo2docker-action@master
         with:
