@@ -8,8 +8,8 @@ export PATH="$HOME/.pixi/bin:$PATH"
 cd "${REPO_DIR:-$HOME}"
 
 # Build both environments exactly from pixi.lock
-pixi install --locked -e py
-pixi install --locked -e r
+pixi install -e py
+pixi install -e r
 
 # Register each environment as a Jupyter kernel
 pixi run -e py python -m ipykernel install --user \
