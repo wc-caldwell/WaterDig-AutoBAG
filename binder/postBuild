@@ -1,14 +1,19 @@
 #!/bin/bash
 set -euo pipefail
 
-# Create the separate R environment
-mamba env create -p "${CONDA_DIR}/envs/r" -f binder/r-env.yml
+# Install pixi into ~/.pixi/bin
+curl -fsSL https://pixi.sh/install.sh | bash
+export PATH="$HOME/.pixi/bin:$PATH"
 
-# Register the R kernel where the Jupyter in the main environment will find it
-"${CONDA_DIR}/envs/r/bin/R" --quiet -e \
-  "IRkernel::installspec(name = 'ir', displayname = 'R', prefix = '${NB_PYTHON_PREFIX}')"
+cd "${REPO_DIR:-$HOME}"
 
-# CRAN-only packages (if any) go here, installed with the R environment's Rscript:
-# "${CONDA_DIR}/envs/r/bin/Rscript" -e 'install.packages("somepkg", repos = "https://cloud.r-project.org")'
+# Build both environments exactly from pixi.lock
+pixi install --locked -e py
+pixi install --locked -e r
 
-mamba clean -afy
+# Register each environment as a Jupyter kernel
+pixi run -e py python -m ipykernel install --user \
+  --name pixi-py --display-name "Python (pixi py)"
+
+pixi run -e r R --quiet -e \
+  'IRkernel::installspec(name = "pixi-r", displayname = "R (pixi r)")'

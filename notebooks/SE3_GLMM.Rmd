@@ -1,0 +1,191 @@
+---
+title: An R Markdown document converted from "notebooks/SE3_GLMM.ipynb"
+output: html_document
+---
+
+Make sure you select the R environment so the correct R dependencies are loaded.
+
+```{r}
+library(glmmTMB)
+library(ggplot2)
+library(emmeans)
+library(tidyverse)
+library(patchwork)    
+library(easystats)
+library(DHARMa)
+library(car)
+library(multcomp)
+library(knitr)
+library(dplyr)
+library(stringr)
+library(gt)
+library(mgcv)
+library(mgcViz)
+library(here)
+```
+
+# Helper function
+
+```{r}
+plot_emmeans_box <- function(model, specs, at_var, at_vals, ylab, xlab) {
+  at_list <- list(seq_vals = at_vals)
+  names(at_list) <- at_var
+  
+  em <- emmeans(model, specs = as.formula(paste("~", "method", "*", at_var)),
+                at = at_list, type = "response")
+  
+  df <- as.data.frame(em)
+  names(df)[names(df) == "response"] <- "estimate"
+  names(df)[names(df) == "asymp.LCL"] <- "lower.CL"
+  names(df)[names(df) == "asymp.UCL"] <- "upper.CL"
+  
+  if ("emmean" %in% names(df)) {
+    names(df)[names(df) == "emmean"] <- "estimate"
+  }
+  
+  df[[at_var]] <- factor(df[[at_var]])
+  
+  method_labels <- c("IDW", "RBF", "OK", "NN", "TIN", "RK")
+  names(method_labels) <- levels(df$method)
+  
+  # Compute SE from CI
+  df$se_est <- (df$upper.CL - df$lower.CL) / (2 * 1.96)
+  
+  # Build box components, clamping to zero
+  df$middle <- pmax(df$estimate, 0)
+  df$lower  <- pmax(df$estimate - df$se_est, 0)
+  df$upper  <- pmax(df$estimate + df$se_est, 0)
+  df$ymin   <- pmax(df$lower.CL, 0)
+  df$ymax   <- pmax(df$upper.CL, 0)
+  
+  ggplot(df, aes(x = .data[[at_var]],
+                 fill = factor(method, labels = method_labels))) +
+    geom_boxplot(
+      aes(ymin = ymin, lower = lower, middle = middle,
+          upper = upper, ymax = ymax),
+      stat = "identity",
+      position = position_dodge(width = 0.9),
+      width = 0.7,
+      colour = "black",
+      linewidth = 0.3
+    ) +
+    labs(y = ylab, x = xlab) +
+    scale_fill_brewer(palette = "Set2") +
+    theme_classic(base_size = 18, base_family = "serif") +
+    theme(
+      axis.text = element_text(size = 16, colour = "black"),
+      axis.title = element_text(size = 18),
+      axis.line = element_line(linewidth = 0.4, colour = "black"),
+      axis.ticks = element_line(linewidth = 0.4, colour = "black"),
+      legend.position = "bottom",
+      legend.text = element_text(size = 16),
+      legend.title = element_blank(),
+      legend.key.size = unit(0.4, "cm"),
+      legend.spacing.x = unit(0.3, "cm"),
+      legend.margin = margin(t = 2),
+      plot.margin = margin(5, 10, 5, 5)
+    ) +
+    guides(fill = guide_legend(nrow = 1))
+}
+```
+
+# Create Generalized Linear Mixed Model (no interactions for now)
+- Should relate the RMSE with the coefficient of variation for depth, global anisotropy of the point cloud, and point density of the point cloud. All values standardized across the 100 sampled surveys due to surrveys coming from diverse environments (riverine, estuarine, coastal, etc.) 
+
+```{r}
+
+
+BASE_DIR <- here()   # repo root, found automatically
+
+# NOTE: work in progress to remove RBF, the grid search takes a very long time and is inconsistent in creating good outputs
+
+METHODS <- c( "TIN_median_10000.tif", "NaturalNeighbor_median_10000.tif", "IDW_median_10000.tif", "RBF_median_10000.tif", "isoKrige_AIC_median_pred_10000.tif", "isoKrige_AIC_median_detrended_pred_10000.tif")
+P_ADJUST <- "holm" 
+ALPHA <- 0.05
+SEED <- 42
+
+RMSE_PATH <- file.path(paste0(BASE_DIR, '/analysis_data/aggregated_rmse.csv'))
+
+
+CHAR_PATH <- file.path(paste0(BASE_DIR, '/analysis_data/survey_characteristics.csv'))
+
+OUT_DIR <- file.path(paste0(BASE_DIR, "/model_outputs/figures"))
+
+dir.create(OUT_DIR, recursive = TRUE, showWarnings = FALSE)
+```
+
+```{r}
+rmse_raw <- read_csv(RMSE_PATH, show_col_types = FALSE)
+chars <- read_csv(CHAR_PATH, show_col_types = FALSE)
+```
+
+```{r}
+df <- rmse_raw %>%
+  pivot_longer(
+    cols      = all_of(METHODS),
+    names_to  = "method",
+    values_to = "mean_rmse"
+  ) %>% 
+  left_join(chars, by = "survey") %>%
+  mutate(
+    method = factor(method, levels = METHODS),
+    survey = factor(survey)
+  ) %>%
+  drop_na(mean_rmse)
+df  
+```
+
+```{r}
+# Check for NAs in the specific columns you are using
+
+# NOTE: working in progress on switching depth_cv to depth_std
+summary(df[c("mean_rmse", "method", "density", "depth_cv", "anisotropy", "survey")])  # "tri",
+```
+
+```{r}
+
+# NOTE: working in progress on switching depth_cv to depth_std
+
+m_glmm <- glmmTMB(mean_rmse ~ method * (density + depth_cv + anisotropy) +   # + tri
+                     (1 | survey),
+                   data = df,
+                   family = Gamma(link = "log"))
+
+sim_res <- DHARMa::simulateResiduals(m_glmm)
+
+# TODO: pix this plot
+par(mfrow = c(2, 3))
+plotQQunif(sim_res)
+plotResiduals(sim_res)
+plotResiduals(sim_res, form = model.frame(m_glmm)$method)
+plotResiduals(sim_res, form = model.frame(m_glmm)$density)
+plotResiduals(sim_res, form = model.frame(m_glmm)$depth_cv)
+plotResiduals(sim_res, form = model.frame(m_glmm)$anisotropy)
+# plotResiduals(sim_res, form = model.frame(m_glmm)$tri)
+par(mfrow = c(1, 1))
+```
+
+Each of the figures created below demonstrate the influence of survey point density, variation in the depth of a hydrographic survey, the anisotropy in the distribution of sampled points, and roughness of the surveyed terrain on the accuracy (RMSE) of the six interpolation methods applied to automatically generate bathymetric surfaces when provided with a point cloud captured by single-beam and multi-beam echosounders. Triangulated Irregular Networks (TIN), Natural Neighbor (NATN), Inverse Distance Weighting (IDW), isotropic Orindary Kriging (OK), and spline-detrended isotropic Regression Kriging (RK) are the five interpolation methods tested. TIN is a baseline emplpoyed by the U.S. Army Corps of Engineers for dredge planning. The other interpolation methods have seen use in literature, and all have their individual trade offs, with their accuracies ultimately influenced by the survey techniques that change the three characteristics we are concerned with.
+
+```{r}
+# Plot 1: density
+plot_emmeans_box(m_glmm, "method", "density",
+                 seq(-2, 2, by = 0.5),
+                 "Predicted RMSE", "Sampling Density (z)")
+
+# Plot 2: depth_cv
+plot_emmeans_box(m_glmm, "method", "depth_cv",
+                 seq(-2, 2, by = 0.5),
+                 "Predicted RMSE", "Depth Coeff. Variation (z)")
+
+# Plot 3: anisotropy
+plot_emmeans_box(m_glmm, "method", "anisotropy",
+                 seq(-2, 2, by = 0.5),
+                 "Predicted RMSE", "Sampling Anisotropy (z)")
+
+# # Plot 4: terrain roughness
+# plot_emmeans_box(m_glmm, "method", "tri",
+#                  seq(-2, 2, by = 0.5),
+#                  "Predicted RMSE", "Sampling Anisotropy (z)")
+```
+

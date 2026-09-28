@@ -5,26 +5,28 @@
 **Organization:** Syracuse University  
 **Website:** [LinkedIn](https://www.linkedin.com/in/clay-caldwell-9530011a3/)
 
+**DISCLAIMER: This repository is still under development and being tested (privately), so some aspects may be incorrect, and some code may break.**
+
 ## Project Overview
 
 - **Problem Statement:** The U.S. Army Corps of Engineers (USACE) currently relies on Triangulated Irregular Networks (TINs) as the default method for generating bathymetric surfaces from hydrographic survey point clouds. While computationally efficient, TINs are prone to artifacts in complex environments and sparsely surveyed, and do not provide any estimate of interpolation uncertainty, potentially limiting the accuracy of dredge volume calculations.
 
-- **Challenge Statement:** Hydrographic surveys vary widely in equipment type (single-beam vs. multi-beam echosounders), point density, spatial anisotropy, and depth variability across the USACE navigation portfolio. No national-scale comparative study has evaluated multiple automated interpolation methods across these diverse survey conditions.
+- **Challenge Statement:** Hydrographic surveys vary widely in equipment type (single-beam vs. multi-beam echosounders), point density, spatial distribution, and surveyed bed surface across the USACE navigation portfolio. No national-scale comparative study has evaluated multiple automated interpolation methods across these diverse survey conditions.
 
-- **Solution Statement:** This study automates and compares four bathymetric interpolation methods — TIN, Natural Neighbor (NN), Ordinary Kriging (OK), and Regression Kriging (RK) — across hundreds of hydrographic surveys from five geographically diverse USACE civil works districts, leveraging automated variogram fitting and cross-validation to eliminate manual parameter tuning.
+- **Solution Statement:** This study automates and compares four bathymetric interpolation methods — TIN, Natural Neighbor (NN), Inverse Distance Weighting (IDW), Ordinary Kriging (OK), and Regression Kriging (RK) — across hundreds of hydrographic surveys from five geographically diverse USACE civil works districts, leveraging automated variogram fitting and cross-validation to eliminate manual parameter tuning.
 
-- **Objective:** To quantify which interpolation method produces the most accurate bathymetric surfaces under varying survey characteristics (anisotropy, depth variability, and point density), and to develop a decision framework to guide USACE practitioners in selecting the most appropriate interpolation method.
+- **Objective:** To quantify which interpolation method produces the most accurate bathymetric surfaces under varying survey characteristics (anisotropy, depth variability, point density, and surveyed terrain roughness), and to progress towards a decision framework to guide USACE practitioners in selecting the most appropriate interpolation method.
 
 - **Literature Review:** Multiple studies have compared interpolation methods for bathymetric surface generation across diverse water bodies globally. TIN, Natural Neighbor, ANUDEM, IDW, and Kriging are the most commonly compared methods (Li et al., 2023). Studies on the Mississippi River found that RBF and anisotropic Ordinary Kriging outperformed other methods in complex environments (Wu et al., 2019), while TIN and a novel Rectilinear IDW approach performed best across 158 SBES surveys in the upper Mississippi River (Andes & Cox, 2017). Similar comparisons in international water bodies have yielded mixed results, often favoring IDW or kriging variants depending on the environment. This study builds on Andes & Cox (2017) by expanding geographic scope to the national scale and addressing their limitation of static, non-optimized kriging parameters through automated variogram fitting.
 
 - **Research Questions:**
-  1. Which bathymetric interpolation method (TIN, NN, IDW, RBF, OK, RK) provides the most accurate depth predictions for USACE navigation channel surveys?
-  2. How does interpolation method performance vary across different combinations of survey characteristics including levels of spatial anisotropy, depth variability, and point density?
-  3. What combinations of survey characteristics can guide practitioners in selecting the most appropriate interpolation method?
+  1. Which bathymetric interpolation method (TIN, NN, IDW, OK, RK) provides the most accurate depth predictions for USACE navigation channel surveys?
+  2. How does interpolation method performance vary across different combinations of survey characteristics including levels of spatial anisotropy, depth variability, point density, and surveyed terrain roughness?
+  3. What combinations of survey characteristics can help guide practitioners in selecting the most appropriate interpolation method?
 
 ## Data Sources
 
-The dataset for this study comes from five USACE civil works districts: Buffalo (LRB), Philadelphia (NAP), Wilmington (SAW), Mobile (SAM), and Portland (NWP). These districts were chosen due to their diverse subaqueous environments and surveying practices. For example, districts exposed to lower energy regimes may see less sediment transport and less shoaling by extension. This could mean that the waterways which are surveyed are less complex and can adequately be surveyed using a simpler single-beam echosounder. The Buffalo district is an example of this, being exposed to no tidal response and lower energy wave spectra. In more dynamic environments like high energy coastal inlets, more shoaling is expected which would lead to more complex bathymetry. A multi-beam echosounder would be best in such cases. The Wilmington district is an example of this as there are numerous high energy, morphologically complex coastal inlets impacted by both ebb and flood shoals. The other districts include various environments spanning low energy, deep, protected ports to high energy, shallow, riparian environments.
+The dataset for this study comes from five USACE civil works districts: Buffalo (LRB), Philadelphia (NAP), Wilmington (SAW), Mobile (SAM), and Portland (NWP). These districts were chosen due to their diverse subaqueous environments and surveying practices. For example, districts exposed to lower energy regimes may see less sediment transport and less shoaling by extension. This could mean that the waterways which are surveyed are less complex and can adequately be surveyed using a simpler singlebeam echosounder (SBES). The Buffalo district is an example of this, being exposed to no tidal response and lower energy wave spectra. In more dynamic environments like high energy coastal inlets, more shoaling is expected which would lead to more complex bathymetry. A multibeam echosounder (MBES) would be best in such cases. The Wilmington district is an example of this as there are numerous high energy, morphologically complex coastal inlets impacted by both ebb and flood shoals. The other districts include various environments spanning low energy, deep, protected ports to high energy, shallow, riparian environments.
 
 | District | District Code | Environment |
 |----------|---------------|-------------|
@@ -43,104 +45,132 @@ The dataset for this study comes from five USACE civil works districts: Buffalo 
 ## Methods
 
 ### Data Retrieval
-Survey data is downloaded from the USACE eHydro database via the PyGeoHydro Python library, which leverages an ArcGIS REST server to query data by USACE district code and user-defined date search window. SBES surveys are retrieved to test interpolation methods for the historically most common, less dense surveys.
+Survey data is downloaded from the USACE eHydro database via the PyGeoHydro Python library, which leverages an ArcGIS REST server to query data by USACE district code and user-defined date search window. MBES surveys are retrieved and randomly decimated to a selected number of points (e.g., 10000) to resemble SBES surveys. This effort was required due to computational limitations for the Kriging approaches, and because SBES are the most common echosounder used, historically.
 
 ### Survey Characterization
-Survey-specific metrics are calculated to characterize each survey prior to interpolation. The Coefficient of Variation (CV) for measured depth, directional anisotropy of depth measurements, and raw data density are computed, as these characteristics are expected to influence interpolation accuracy.
+Survey-specific metrics are calculated to characterize each survey prior to interpolation. The standard deviation of the measured depth, directional anisotropy of depth measurements, sounding density, and a terrain roughness index derived from the raw soudnings are computed, as these characteristics are expected to influence interpolation accuracy.
 
 ### Interpolation Methods
-Six interpolation methods are implemented and compared:
+Five interpolation methods are implemented and compared:
 
 - **TIN (Triangulated Irregular Network):** The current default USACE method. Employs Delaunay triangulation with linear interpolation within triangles. Implemented using SciPy.
 - **NN (Natural Neighbor):** Builds on TIN by employing area-weighted interpolation via Voronoi tessellation to reduce artifacts at triangle boundaries. Implemented using SciPy.
+- **IDW (Inverse Distance Weighting):** Uses Euclidean distance of nearby points to measure the influence each nearby sounding should have on the prediction point. Implemented using SciPy.
 - **OK (Ordinary Kriging):** Models spatial correlation by fitting an empirical variogram to depth data using weighted least squares via GSTools. The optimal variogram shape function (from 9 candidates) is selected by minimizing the Akaike Information Criterion (AIC). Kriging is then executed using PyKrige.
 - **RK (Regression Kriging):** Addresses potential nonstationarity by fitting a spline trend surface to depth data using Verde, then applying OK on the spline residuals via PyKrige. Final predictions combine the spline trend and kriged residuals.
 
 The nine variogram shape functions tested include: Spherical, Exponential, Gaussian, Matérn, Stable, Rational, Circular, SuperSpherical, and JBessel (Hole-Effect).
 
 ### Output
-All interpolation outputs are saved as Cloud Optimized GeoTIFFs (COGs) at 10 ft spatial resolution in the original horizontal and vertical projection system of the input data, bounded by the convex hull survey boundary. For kriging methods, a corresponding kriging variance COG is also saved. The 10 ft resolution is chosen for compatibility with the Corps Shoaling Analysis Tool (CSAT).
+All interpolation outputs are saved as Cloud Optimized GeoTIFFs (COGs) at 10 ft spatial resolution in the original horizontal and vertical projection system of the input data, bounded by the convex hull survey boundary. For kriging methods, a corresponding kriging variance COG is also available. The 10 ft resolution is chosen for compatibility with the Corps Shoaling Analysis Tool (CSAT).
 
 ### Modeling Framework
 - **Cross-validation:** Block 10-fold cross-validation reporting RMSE, MAE, and Mean Error for each method and survey.
 - **Residual analysis:** Shapiro-Wilk test, skewness, and kurtosis for normality; Moran's I for spatial independence; Breusch-Pagan test for homoscedasticity.
-- **Statistical modeling:** Cross-validated RMSE serves as the response variable in a Linear Mixed Model (LMM) or Generalized LMM (GLMM). Fixed effects include interpolation method, survey characteristics, and their two-way interactions. Survey is treated as a random effect. Post-hoc comparisons using Estimated Marginal Means (EMMs) with Tukey adjustment identify overall and condition-specific best-performing methods. Implemented in R using `lme4` and `emmeans`.
+- **Statistical modeling:** Cross-validated RMSE serves as the response variable in a generalized linear mixed model (GLMM). Fixed effects include interpolation method, survey characteristics, and their interactions. Survey is treated as a random effect. Post-hoc comparisons using Estimated Marginal Means (EMMs) with Holm adjustment to identify overall and condition-specific best-performing methods. Implemented in R using `glmmTMB` and `emmeans`.
 
 ## Repository Structure
 
 ```
 ~/local_data
-├── code
-│   ├── model_comparisons
-│   │   └── # Code and interactive notebooks to calculate and compare interpolation model accuracy using RMSE, MAE, and Mean Error
-│   ├── process_data
-│   │   └── # Code and interactive notebooks used to process and generate bathymetric surfaces from hydrographic survey point cloud data
-│   ├── source_data
-│   │   └── # Code and interactive notebooks used to source the data needed, in this case the hydrographic survey point cloud data
-│   └── visualize
-│       └── # Code to create figures, tables, and maps for the metrics and residuals which are used to identify best interpolation methods
-├── figures_tables
-│   └── # where the figures and tables presenting the results will be stored
-├── model_outputs
-│   └── # where the results of the modeling will be stored. This may include cross-validation metrics in tabular format, bathymetric surfaces in GeoTiff format, etc.
-└── src
-    └──processing_help.py
-        └── # python file which is used to help with data retrieval and processing
-    └── interpolators
-        └── # where the methods to impliment the various interpolation methods are stored
+├── notebooks
+│   ├── SE1_data_access.ipynb
+│   │   └── # Notebook used to retrieve hydrographic surveys from the USACE eHydro database
+│   ├── SE2_generate_surfaces.ipynb
+│   │   └── # Notebook used to generate bathymetric rasters using the interpolation methods
+│   ├── SE3_interpolation_comparison_GAM.ipynb
+│   │   └── # Notebook used to model the influence of the 4 survey characteristics on the RMSE of each interpolation method
+├── raw_data
+│   └── # Folder created in SE1_data_access.ipynb to store the raw soundgins retrieved from USACE eHydro database
+├── analysis_data
+│   └── # Folder where the RMSE of each interpolation method, and associated characteristics from raw soundings, are stored for use in SE3_GLMM.ipynb
+├── src
+│   ├──processing_help.py
+│   │   └── # python file which is used to help with data retrieval and processing
+│   └── interpolators
+│       └── # where the methods to impliment the various interpolation methods are stored
+├── binder
+│   └── # Folder where Python and R environments are stored for repo2docker
+├── run_reproducibility.py
+│   └── # Used to run the notebooks
+├── pixi.toml
+│   └── # Optional file to use pixi for running code instead of JupyterLab
 ```
 
 ### Computational Requirements
+There are two options for reproducing the work in this git repo: (i) A docker container generated by [repo2docker](https://repo2docker.readthedocs.io/en/latest/) which leverages JupyterLab; and (ii) [the Pixi package management tool](https://pixi.prefix.dev/latest/).
 
-This repository is built on [the Pixi package management tool](https://pixi.prefix.dev/latest/). This tool has built-in support for work on multiple platforms (Linux, macOS, Windows, and more), organizes and composes multiple computing environments, manages complex data pipelines via tasks, and has many more features built-in. Additionally, a Dockerfile is provided which will build an x64-based Linux image with Pixi preinstalled. This will allow the user to choose to download Pixi on their machine locally, or spin up a Docker container for better reproducibility.
+For repo2docker, [docker](https://docs.docker.com/engine/install/) must be installed on your device. You can then navigate to the packages secion on this git repo and pull the latest image. In a terminal on your device, you can run something like:
+```bash
+docker run -it --rm -p 8888:8888 ghcr.io/wc-caldwell/waterdig-autobag:latest --platform linux/amd64
+```
 
-This repository utilizes the *pixi.toml* manifest to define two Python environments:
-- **`process`:** Used for data retrieval, preprocessing, decimation, and interpolation (TIN, NN, IDW, RBF, OK, RK). Key libraries include PyGeoHydro, Verde, GSTools, PyKrige, and SciPy.
-- **`eval`:** Used for cross-validation, residual analysis, and statistical modeling. Key libraries include tools for LMM/GLMM modeling and spatial statistics.
+There are many arguments and options for docker containers, so please consult [their documentation](https://docs.docker.com/get-started/).
+
+Additionally, [the Pixi package management tool](https://pixi.prefix.dev/latest/) has built-in support for work on multiple platforms (Linux, macOS, Windows, and more), organizes and composes multiple computing environments, manages complex data pipelines via tasks, and has many more features built-in. Additionally, a Dockerfile is provided which will build an x64-based Linux image with Pixi preinstalled. This will allow the user to choose to download Pixi on their machine locally, or spin up a Docker container for better reproducibility.
+
+This repository utilizes the *pixi.toml* manifest to define two environments:
+- **`py`:** Used for data retrieval, preprocessing, decimation, interpolation (TIN, NN, IDW, OK, RK), cross-validation, and residual analysis. Key libraries include PyGeoHydro, Verde, GSTools, PyKrige, and SciPy.
+- **`r`:** Used for statistical modeling. Key libraries include tools for LMM/GLMM modeling and spatial statistics.
 
 - For local installation: x64-based Linux, Windows, and OSX as well as ARM-based OSX are supported. [Pixi local installation steps](https://pixi.sh/latest/installation/)
-- For Docker installation: Container will be Linux x64-based, which may lead to slower processing on ARM-based hardware due to additional virtualization layer(s). [Docker installation steps](https://docs.docker.com/engine/install/)
 
 ## How to Reproduce
 
-Reproducibility is handled by *Pixi Tasks*, which executes the data pipeline by leveraging the Pixi CLI to run the needed Python files. This is accomplished using the *src/autodbm.reproduce.py* file.
+**If using the docker image**, you should be able to access the Jupyter instance in your browser. You may need to follow these steps:
+
+1. Clone the repository into your Jupyter instance. This uses the terminal and a command like:
+```bash
+git clone https://github.com/wc-caldwell/WaterDig-AutoBAG.git
+```
+
+2. Open the notebook you wish to reproduce, and make sure you select the appropriate kernel:
+- SE1 and SE2 ---> Python3
+- SE3         ---> R
+
+**If using a local pixi installation**, reproducibility is handled by *Pixi Tasks*, which executes the data pipeline by leveraging the Pixi CLI to run the SE .ipynb files.
 
 1. Make sure the Pixi manifest and Python environments are established and initialized.
 ```bash
 pixi install -a
 ```
 
-2. Retrieve eHydro point clouds and generate bathymetric surfaces using the *process* environment. Executing the below from the command line within the repository's parent directory will retrieve the target hydrographic survey data, apply the various interpolation methods, and produce 10 ft spatial resolution bathymetric surface rasters.
+2. Retrieve eHydro point clouds using the *py* environment. Executing the below from the command line within the repository's parent directory will retrieve the target hydrographic survey data for further processing.
 ```bash
-pixi run -e process interpolate
+pixi run -e py retrieve
 ```
 
-3. Evaluate and compare interpolation method accuracy and residuals using the *eval* environment. Executing the below will report the models' validation statistics, assess patterns within model residuals, and output spatial error maps.
+3. Generate bathymetric surfaces, evaluate interpolation method accuracy, and examine the residuals using the *py* environment. Executing the below will apply the various interpolation methods and produce 10 ft spatial resolution bathymetric surface rasters. It will also generate accuracy statistics (e.g., RMSE) and generate an evaluatino of the structure of the reisudals for each output.
+
+3. Evaluate and compare interpolation method accuracy and residuals using the *r* environment. Executing the below will report the models' validation statistics, assess patterns within model residuals, and output spatial error maps.
 ```bash
-pixi run -e eval analyze
+pixi run -e py interpolate
 ```
 
-4. Run the linear mixed modeling to assess the statistical significance in model accuracy with respect to the survey characteristics. This will be completed using the default environment leveraging the R language.
+4. Run the generalized linear mixed model (GLMM) to assess the influence of each survey characteristic on the RMSE of each model. This is done using R language since the modeling packages are more mature.
 ```bash
-pixi run mixedmodel
+pixi run -e r model
 ```
+
+**NOTE:** Running these commands without editing the notebooks may only execute them for one example survey (for SE1), or fail since we may not have a sufficient number of surveys downloaded for processing (SE2). SE3 is built on SE1 and SE2, so if those fail then SE3 is expected to fail as well.
 
 ### Data Access
 
 Accessing eHydro data is streamlined using custom-built Python functions. A user can specify a search window (e.g., `01-01-2021` to `01-01-2026`), the USACE civil works district code (e.g., `CESAW` for Wilmington District), or a specific `SurveyId` for a particular hydrographic survey. For this study, search window and USACE district codes were used to collect surveys for testing.
 
 ```python
-from src.autodbm.processing_help import retrieve_ehydro_data
+from src.processing_help import retrieve_ehydro_data
 
 # Example: retrieve all surveys from Wilmington District between 2021-2026
 surveys = retrieve_ehydro_data(
-    district_symbol="CESAW",
+    data_dir= Path(os.getcwd()).parent / 'raw_data', 
     start_date="2021-01-01",
     end_date="2026-01-01",
-    max_workers = 8
-)
+    district_symbol="CESAW",
+    max_workers=8)
 
-# Example: retrieve a particvular surveys from Elizabeth Marine Terminal, Port Newark from 02 MAY, 2023
+
+# Example: retrieve a particular survey from Elizabeth Marine Terminal, Port Newark from 02 MAY, 2023
 surveys = retrieve_ehydro_data(
     district_symbol="CENAN",
     surveyId = 'NB_05_PHD_20230502_CS_5289_30',
@@ -156,9 +186,7 @@ surveys = retrieve_ehydro_data(
 - Block 10-fold cross-validation statistics (RMSE, MAE, Mean Error) by method and survey
 - Assessment of model residuals with respect to linearity, spatial independence, normality, and homoscedasticity
 - Spatial prediction residual maps
-- LMM/GLMM model outputs identifying significant differences between methods
-- EMM post-hoc comparison tables
-- Decision framework for interpolation method selection based on survey characteristics
+- GLMM model outputs showing the influence of survey characteristics on the model RMSE
 
 ## Citation
 
