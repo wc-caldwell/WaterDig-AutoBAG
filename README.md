@@ -102,7 +102,7 @@ There are two options for reproducing the work in this git repo: (i) A docker co
 
 For repo2docker, [docker](https://docs.docker.com/engine/install/) must be installed on your device. You can then navigate to the packages secion on this git repo and pull the latest image. In a terminal on your device, you can run something like:
 ```bash
-docker run -it --rm -p 8888:8888 ghcr.io/wc-caldwell/waterdig-autobag:latest --platform linux/amd64
+docker run -it --rm -p 8888:8888 --platform linux/amd64 ghcr.io/wc-caldwell/waterdig-autobag:latest
 ```
 
 There are many arguments and options for docker containers, so please consult [their documentation](https://docs.docker.com/get-started/).

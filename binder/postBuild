@@ -4,8 +4,7 @@ cd "${REPO_DIR}"
 
 pixi config set --local detached-environments "${CONDA_DIR}/pixi-envs"
 
-pixi install --locked -e py
-pixi install --locked -e r
+pixi install -a
 
 pixi run --frozen -e py python -m ipykernel install --prefix "${NB_PYTHON_PREFIX}" --name pixi-py --display-name "Python (pixi py)"
 pixi run --frozen -e r R --quiet -e "IRkernel::installspec(user = FALSE, prefix = '${NB_PYTHON_PREFIX}', name = 'pixi-r', displayname = 'R (pixi r)')"
