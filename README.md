@@ -81,20 +81,18 @@ All interpolation outputs are saved as Cloud Optimized GeoTIFFs (COGs) at 10 ft 
 │   ├── SE3_interpolation_comparison_GAM.ipynb
 │   │   └── # Notebook used to model the influence of the 4 survey characteristics on the RMSE of each interpolation method
 ├── raw_data
-│   └── # Folder created in SE1_data_access.ipynb to store the raw soundgins retrieved from USACE eHydro database
+│   └── # Folder created in SE1_data_access.ipynb to store the raw soundings retrieved from USACE eHydro database
 ├── analysis_data
-│   └── # Folder where the RMSE of each interpolation method, and associated characteristics from raw soundings, are stored for use in SE3_GLMM.ipynb
+│   └── # Folder where the RMSE of each interpolation method, and associated characteristics from raw soundings, are stored as csv files for use in SE3_GLMM.ipynb
 ├── src
 │   ├──processing_help.py
 │   │   └── # python file which is used to help with data retrieval and processing
 │   └── interpolators
 │       └── # where the methods to impliment the various interpolation methods are stored
 ├── binder
-│   └── # Folder where Python and R environments are stored for repo2docker
-├── run_reproducibility.py
-│   └── # Used to run the notebooks
+│   └── # Folder where build instructions are stored to help with pix setup in repo2docker
 ├── pixi.toml
-│   └── # Optional file to use pixi for running code instead of JupyterLab
+│   └── # Pixi manifest for the various environments we are using
 ```
 
 ### Computational Requirements
@@ -117,7 +115,8 @@ This repository utilizes the *pixi.toml* manifest to define two environments:
 
 ## How to Reproduce
 
-**If using the docker image**, you should be able to access the Jupyter instance in your browser. You may need to follow these steps:
+###If using the docker image:
+You should be able to access the Jupyter instance in your browser. You may need to follow these steps:
 
 1. Clone the repository into your Jupyter instance. This uses the terminal and a command like:
 ```bash
@@ -125,10 +124,11 @@ git clone https://github.com/wc-caldwell/WaterDig-AutoBAG.git
 ```
 
 2. Open the notebook you wish to reproduce, and make sure you select the appropriate kernel:
-- SE1 and SE2 ---> Python3
-- SE3         ---> R
+- SE1 and SE2 ---> pixi py
+- SE3         ---> pixi r
 
-**If using a local pixi installation**, reproducibility is handled by *Pixi Tasks*, which executes the data pipeline by leveraging the Pixi CLI to run the SE .ipynb files.
+###If using a local pixi installation:
+Reproducibility is handled by *Pixi Tasks*, which executes the data pipeline by leveraging the Pixi CLI to run the SE .ipynb files.
 
 1. Make sure the Pixi manifest and Python environments are established and initialized.
 ```bash
@@ -152,7 +152,7 @@ pixi run -e py interpolate
 pixi run -e r model
 ```
 
-**NOTE:** Running these commands without editing the notebooks may only execute them for one example survey (for SE1), or fail since we may not have a sufficient number of surveys downloaded for processing (SE2). SE3 is built on SE1 and SE2, so if those fail then SE3 is expected to fail as well.
+**NOTE:** Currently, running these commands without editing the notebooks may only execute them for one example survey (for SE1), or fail since we may not have a sufficient number of surveys downloaded for processing (SE2). SE3 is built on SE1 and SE2, so if those fail then SE3 is expected to fail as well.
 
 ### Data Access
 
