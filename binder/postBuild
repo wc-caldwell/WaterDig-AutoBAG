@@ -1,19 +1,13 @@
 #!/bin/bash
 set -euo pipefail
+cd "${REPO_DIR}"
 
-# Install pixi into ~/.pixi/bin
-curl -fsSL https://pixi.sh/install.sh | bash
-export PATH="$HOME/.pixi/bin:$PATH"
+pixi config set --local detached-environments "${CONDA_DIR}/pixi-envs"
 
-cd "${REPO_DIR:-$HOME}"
+pixi install --locked -e py
+pixi install --locked -e r
 
-# Build both environments exactly from pixi.lock
-pixi install -e py
-pixi install -e r
+pixi run --frozen -e py python -m ipykernel install --prefix "${NB_PYTHON_PREFIX}" --name pixi-py --display-name "Python (pixi py)"
+pixi run --frozen -e r R --quiet -e "IRkernel::installspec(user = FALSE, prefix = '${NB_PYTHON_PREFIX}', name = 'pixi-r', displayname = 'R (pixi r)')"
 
-# Register each environment as a Jupyter kernel
-pixi run -e py python -m ipykernel install --user \
-  --name pixi-py --display-name "Python (pixi py)"
-
-pixi run -e r R --quiet -e \
-  'IRkernel::installspec(name = "pixi-r", displayname = "R (pixi r)")'
+pixi clean cache --yes
