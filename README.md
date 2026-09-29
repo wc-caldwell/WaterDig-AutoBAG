@@ -115,7 +115,7 @@ This repository utilizes the *pixi.toml* manifest to define two environments:
 
 ## How to Reproduce
 
-###If using the docker image:
+### If using the docker image:
 You should be able to access the Jupyter instance in your browser. You may need to follow these steps:
 
 1. Clone the repository into your Jupyter instance. This uses the terminal and a command like:
@@ -127,7 +127,7 @@ git clone https://github.com/wc-caldwell/WaterDig-AutoBAG.git
 - SE1 and SE2 ---> pixi py
 - SE3         ---> pixi r
 
-###If using a local pixi installation:
+### If using a local pixi installation:
 Reproducibility is handled by *Pixi Tasks*, which executes the data pipeline by leveraging the Pixi CLI to run the SE .ipynb files.
 
 1. Make sure the Pixi manifest and Python environments are established and initialized.
