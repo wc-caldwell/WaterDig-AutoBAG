@@ -161,9 +161,11 @@ Accessing eHydro data is streamlined using custom-built Python functions. A user
 ```python
 from src.processing_help import retrieve_ehydro_data
 
+OUT_DIR = Path(os.getcwd()).parent / 'raw_data'
+
 # Example: retrieve all surveys from Wilmington District between 2021-2026
 surveys = retrieve_ehydro_data(
-    data_dir= Path(os.getcwd()).parent / 'raw_data', 
+    data_dir= OUT_DIR, 
     start_date="2021-01-01",
     end_date="2026-01-01",
     district_symbol="CESAW",
@@ -172,6 +174,7 @@ surveys = retrieve_ehydro_data(
 
 # Example: retrieve a particular survey from Elizabeth Marine Terminal, Port Newark from 02 MAY, 2023
 surveys = retrieve_ehydro_data(
+    data_dir= OUT_DIR,
     district_symbol="CENAN",
     surveyId = 'NB_05_PHD_20230502_CS_5289_30',
     max_workers = 8
